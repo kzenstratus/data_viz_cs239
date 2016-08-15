@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<!-- @author: kzen
+credit to: 
+http://bl.ocks.org/josiahdavis/7d84b2f1837eab9c24d9
+https://bl.ocks.org/mbostock/3887051
+
+Data Viz CMSC 23900
+CNETID: kzen
+ -->
+<!-- Background color shoul dbe white -->
+<style>
+body {
+  font: 10px sans-serif;
+  background-color: white;
+}
+
+.axis path,
+
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+/*Here we want half the vertical bar chart to be on the page
+so set height = 200%*/
+#chart {
+  width: 100%;
+  height: 200%;
+  position: absolute;
+}
+.y.axis path {
+  display: none;
+}
+h1 {
+    text-align: center;
+}
+
+</style>
+
+<html>
+  <head>
+    <script src="d3/d3.min.js" charset="utf-8"></script>
+  </head>
+  <h1>Median Annual Earnings for Women and Men with a Bachelor's Degree or Higher (Full-Time, Year-Round Workers Aged 25 and Older), by State, in 2013</h1>
+  <body>
+
+  <!-- This is where our svg chart will go -->
+  <svg id="chart"></svg>
+
+  <script>
+
+    // Dynamically set your screen sizing, makes resizing easier
+    var margin = {top: 20, right: 30, bottom: 20, left: 30},
+        width = parseInt(d3.select("#chart").style("width")) - margin.left - margin.right,
+        height = parseInt(d3.select("#chart").style("height")) - margin.top - margin.bottom;
+
+    // Set the range for the x axis
+    var x = d3.scale.linear()
+      .range([0,width])
+
+    // let each bar height = x, 2x per tick,
+    // pad = 2/3 x every 2x. total 2/3x+2x = 1
+    // 8/3x = 1, x = 3/8, and thus pad = 0.25
+    var y0 = d3.scale.ordinal()
+      .rangeRoundBands([0,height],0.25);
+
+    // Within each y category, need to categorize men/female
+    var y1 = d3.scale.ordinal()
+
+    //  left color for women, right for men
+    var color = d3.scale.ordinal()
+    .range(["#6EAFFF","#E6A064"]);
+
+    /////// CREATE AXIS ///////////////
+
+    // These are auto-generated integer ticks,
+    // pass them into the xAxis tickFormat
+    var customTick = d3.format("s");
+
+    // create the actual x axis
+    var xAxis = d3.svg.axis()
+      .scale(x)
+      .orient("top")
+      .tickFormat(function(d){ return "$"+ customTick(d)+"K"});
+
+    // create the actual y axis
+    var yAxis = d3.svg.axis()
+      .scale(y0)
+      .orient("left")
+
+    ////// Create your svg object, align it in the chart id ///////
+    var svg = d3.select("#chart")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+    // READ IN DATA and PLOT
+    d3.csv("state-women-men.csv",function(error,data){
+      if (error) throw error;
+      console.log(data)
+
+      // Get a list of the variables besides the index (State)
+      var labels = d3.keys(data[0]).filter(function(key) { return key !== "State"; });
+
+      // Run through each item in data and map a label to it's value
+      data.forEach(function(d) {
+        d.pay = labels.map(function(name) { return {name: name, value: +d[name]}; });
+      });
+
+      // Determine the range of data to set to your object
+      // automatically establishes intervals
+      x.domain([0,d3.max(data,function(d){ return 100; })]);
+      y0.domain(data.map(function(d){return d.State;}));
+      y1.domain(labels).rangeRoundBands([0,y0.rangeBand()]);
+      
+      // Plot the axis, take the height of the bar
+      // and choose number between (1,2) to set as size
+      svg.append("g")
+          .attr("class", "y axis")
+          .style("font-size", 1.2 * y1.rangeBand())
+          // call invokes the function yAxis
+          .call(yAxis)
+      // dynamically resize the $ ticks in the same way as the 
+      // state labels
+      svg.append("g")
+        .attr("class", "x axis")
+        .style("font-size", y1.rangeBand())
+        .call(xAxis);
+
+      // Create svg "U.S. State" labels, and append them to the dom
+      var state = svg.selectAll(".state")
+          .data(data)
+        .enter().append("g")
+          .attr("class","state")
+          .attr("transform", function(d) { return "translate(" + "0," + y0(d.State) +")" ; });
+
+      // //Create a rectangle, set length to be the length of data
+      state.selectAll("bar")
+          .data(function(d){return d.pay;})
+        .enter().append("rect")
+          .attr("class","bar")
+          .attr("height", y1.rangeBand())
+          .attr("y", function(d){return y1(d.name); })
+          .attr("x", function(d){return 0; })
+          .attr("width", function(d){return x(d.value); })
+          .style("fill", function(d){return color(d.name); });
+
+    })
+
+
+    // Defines responsive screen size
+    function resize() {
+      // reset the width and height
+      width = parseInt(d3.select("#chart").style("width")) - margin.left - margin.right,
+      height = parseInt(d3.select("#chart").style("height")) - margin.top - margin.bottom;
+
+      // Update the range of the scale with new width/height
+      x.range([0, width]);
+      y0.rangeRoundBands([0,height],0.25);
+      // Need to update y1 rangebands, otherwise bars won't change
+      y1.rangeRoundBands([0,y0.rangeBand()]);
+
+
+      // Update the axis and text with the new scale
+      svg.select(".x.axis")
+        .call(xAxis)
+
+      // Update the y axis when the screen size changes
+      svg.select(".y.axis")
+        .style("font-size", 1.2 * y1.rangeBand())
+        .call(yAxis)
+
+      // Rerender the states
+      svg.selectAll(".state")
+          .attr("transform", function(d) { return "translate(" + "0," + y0(d.State) +")" ; });
+
+      // Recalculate all the bars
+      svg.selectAll(".bar")
+        .attr("height", y1.rangeBand())
+        .attr("y", function(d){return y1(d.name); })
+        .attr("x", function(d){return 0; })
+        .attr("width", function(d){return x(d.value); })
+        // .style("fill", function(d){return color(d.name); });
+    };
+
+    // Call the resize function whenever a resize event occurs
+    d3.select(window).on('resize', resize);
+
+
+  </script>
+  </body>
+
+</html>

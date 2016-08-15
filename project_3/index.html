@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Project 3</title>
+  <style>
+    body {
+      height:100vh;
+      background-color: #ccc;
+    }
+    .stateID {
+      font-family: sans-serif;
+      text-anchor: middle;
+      dominant-baseline: central;
+      font-size: 13px;
+      fill: #333;
+      /* thanks http://stackoverflow.com/questions/4919076/outline-effect-to-text */
+      text-shadow:
+      1px  0px 1px #ddd,
+      -1px  0px 1px #ddd,
+      0px  1px 1px #ddd,
+      0px -1px 1px #ddd;
+    }
+    .container {
+      text-align: center;
+      height:100%;
+    }
+    .cell {
+      /* thanks https://css-tricks.com/centering-css-complete-guide/ */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #thevis{
+      height:60%;
+      width:100%;
+    }
+    #pcaWarning{
+      color:red;
+      height:1%;
+      width:100%;
+    }
+    #cmapleg{
+      height:40%;
+      float:left;
+      width:35%;
+    }
+    #pcaleg{
+      height:40%;
+      float:left;
+      width:32%;
+    }
+    #cmapChooser{
+      height:40%;
+      float:right;
+      width:24%;
+    }
+    #varChooser{
+      height:40%;
+      float:right;
+      width:9%;
+    }
+  </style>
+  <script src="js/d3.js"></script>
+  <script src="js/numeric-1.2.6.js"></script>
+  <script src="student.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="cell" id="thevis"><svg id="mapUS"></svg></div>
+    <div class="cell" id="pcaWarning"></div>
+    <div class="cell" id="cmapleg">
+      <div style="position: relative;">
+        <!-- thanks http://stackoverflow.com/questions/24041111/can-i-place-a-svg-image-element-on-top-a-canvas-element -->
+        <canvas style="outline: #ccc solid 1px;"></canvas>
+        <!-- "cml" == colormap legend -->
+        <svg id="cmlLabels" style="position: absolute; left:-100px; top:-40px;
+                                   font-family: sans-serif; font-size: 12px;
+                                   fill: black; dominant-baseline: central;">
+          <g id="yminlabel" style="text-anchor: end;"><text>ymin</text></g>
+          <g id="ymaxlabel" style="text-anchor: end;"><text>ymax</text></g>
+          <g id="xminlabel" style="text-anchor: start;"><text>xmin</text></g>
+          <g id="xmaxlabel" style="text-anchor: end;"><text>xmax</text></g>
+        </svg>
+        <svg id="cmlMarks" style="position: absolute; left:0px; top:0px;">
+        </svg>
+      </div>
+    </div>
+    <div class="cell" id="pcaleg" style="position: relative;">
+      <svg id="pcaMarks" style="font-family: sans-serif; font-size: 12px;
+                                fill: black; text-anchor: middle;
+                                dominant-baseline: central;">
+        <line id="pcaOrigX" stroke="white" stroke-width="2"></line>
+        <line id="pcaOrigY" stroke="white" stroke-width="2"></line>
+        <!-- more per-variable text elements will be added here -->
+      </svg>
+    </div>
+    <div class="cell" id="cmapChooser">
+      <form align="left">
+        <input type="radio" name="whichCmap" value="OB">Obesity (OB uni)<br>
+        <input type="radio" name="whichCmap" value="UN">Unemployment (UN uni)<br>
+        <input type="radio" name="whichCmap" value="IM">Infant Mortality (IM uni)<br>
+        <input type="radio" name="whichCmap" value="VU">D,R votes (PL uni)<br>
+        <input type="radio" name="whichCmap" value="VB">D,R votes (PL,VA bi)<br>
+        <input type="radio" name="whichCmap" value="ER">Men,Women Earn (ME,WE bi)<br>
+        <input type="radio" name="whichCmap" value="PC0">PCA component 0 (uni)<br>
+        <input type="radio" name="whichCmap" value="PC1">PCA component 1 (uni)<br>
+        <input type="radio" name="whichCmap" value="PC2">PCA component 2 (uni)<br>
+        <input type="radio" name="whichCmap" value="PC01">PCA components 0,1 (bi)<br>
+        <input type="radio" name="whichCmap" value="PC02">PCA components 0,2 (bi)<br>
+        <input type="radio" name="whichCmap" value="PC12">PCA components 1,2 (bi)<br>
+      </form>
+    </div>
+    <div class="cell" id="varChooser">
+      <form align="left">
+        PCA of:<br>
+        <input type="checkbox" name="whichVars" value="OB">OB<br>
+        <input type="checkbox" name="whichVars" value="UN">UN<br>
+        <input type="checkbox" name="whichVars" value="IM">IM<br>
+        <input type="checkbox" name="whichVars" value="PL">PL<br>
+        <input type="checkbox" name="whichVars" value="VA">VA<br>
+        <input type="checkbox" name="whichVars" value="ME">ME<br>
+        <input type="checkbox" name="whichVars" value="WE">WE<br>
+        <input type="checkbox" name="whichVars" value="GS">GS<br>
+        <input type="checkbox" name="whichVars" value="FB">FB<br>
+      </form>
+    </div>
+  </div>
+  <script>
+    (function() {
+    P3.CmapLegSize = 230;  // width and height of picture of colormap
+    P3.PCALegSize = 300;   // width and height of indication of PCA variables
+    // the variables that might undergo principle component analysis (PCA)
+    P3.PCAVars = ["OB", "UN", "IM", "PL", "VA", "ME", "WE", "GS", "FB"];
+    var HexWidth = 53;     // hexagon width
+    /* set size of SVG to contain US map, based on number of hexagons
+       in it horizontally and vertically */
+    d3.select("#mapUS")
+        .attr("width", 12*HexWidth)
+        .attr("height", (8 + 1/3)*(Math.sqrt(3)/2)*HexWidth);
+
+    /* function to learn which radio button was selected;
+       thanks http://stackoverflow.com/a/9618826 */
+    function whichRadio(name) {
+        var radios = document.getElementsByName(name);
+        for (var i = 0, length = radios.length; i < length; i++) {
+            if (radios[i].checked) {
+                return radios[i].value;
+            }
+        }
+        return undefined;
+    }
+    /* similar function for listing which check boxes are checked */
+    function whichChecked(name) {
+        var checks = document.getElementsByName(name);
+        var chcked = [];
+        for (var i = 0, length = checks.length; i < length; i++) {
+            if (checks[i].checked) {
+                chcked.push(checks[i].value);
+            }
+        }
+        return chcked;
+    }
+    d3.select("#cmapChooser").selectAll("input").on("click", function() {
+        var wat = whichRadio("whichCmap");
+        /* the choiceSet function gets the same "wat" as before, but now
+           also an array of which components should be analyzed with PCA */
+        P3.choiceSet(wat,whichChecked("whichVars"));
+    });
+
+    /* create the canvas in which we put an image of the colormap used.
+       thanks http://bl.ocks.org/mbostock/11413789 */
+    var canvas = document.querySelector("canvas");
+    canvas.width = P3.CmapLegSize;
+    canvas.height = P3.CmapLegSize;
+    P3.cmlContext = canvas.getContext("2d"); // global
+    P3.cmlImage = P3.cmlContext.createImageData(P3.CmapLegSize, P3.CmapLegSize); // global
+    /* set pixels of cmlImage to checkerboard (not useful except
+       as example of how to traverse the cmlImage pixel array */
+    for (var j=0, k=0; j < P3.CmapLegSize; ++j) {
+        for (var i=0; i < P3.CmapLegSize; ++i) {
+            P3.cmlImage.data[k++] = 230 + 25*(Math.floor(i/10) % 2);
+            P3.cmlImage.data[k++] = 230 + 25*(Math.floor(j/10) % 2);
+            P3.cmlImage.data[k++] = 230
+            P3.cmlImage.data[k++] = 255;
+        }
+    }
+    // display cmlImage inside canvas
+    P3.cmlContext.putImageData(P3.cmlImage, 0, 0);
+
+    /* place the colormap axis labels. The use of constants here
+       to specify their locations is regrettable */
+    d3.select("#cmlMarks")
+        .attr("width", P3.CmapLegSize)
+        .attr("height", P3.CmapLegSize)
+    d3.select("#cmlLabels")
+        .attr("width", 120+P3.CmapLegSize)
+        .attr("height", 80+P3.CmapLegSize)
+    d3.select("#yminlabel")
+        .attr("transform", "translate(96, " + (40+P3.CmapLegSize) + ")")
+    d3.select("#ymaxlabel")
+        .attr("transform", "translate(96, 40)")
+    d3.select("#xminlabel")
+        .attr("transform", "translate(100, " + (54+P3.CmapLegSize) + ")")
+    d3.select("#xmaxlabel")
+        .attr("transform", "translate(" + (100+P3.CmapLegSize) + ", " + (54+P3.CmapLegSize) + ")")
+
+    d3.select("#pcaMarks")
+        .attr("width", P3.PCALegSize)
+        .attr("height", P3.PCALegSize)
+    // draw little cross-hair at center of PCA legend
+    d3.select("#pcaOrigX")
+        .attr("x1", P3.PCALegSize/2).attr("x2", P3.PCALegSize/2)
+        .attr("y1", P3.PCALegSize/2-10).attr("y2", P3.PCALegSize/2+10)
+    d3.select("#pcaOrigY")
+        .attr("y1", P3.PCALegSize/2).attr("y2", P3.PCALegSize/2)
+        .attr("x1", P3.PCALegSize/2-10).attr("x2", P3.PCALegSize/2+10)
+    /* create one text (svg) element per PCA variable, initially
+       centered, and transparent. The id for each is "pcaXX" where XX
+       is the variable; e.g. "pcaUN", "pcaIM", etc., which can be
+       selected later with d3.select("#pca" + var) */
+    P3.PCAVars.map(function(vr) {
+           d3.select("#pcaMarks")
+             .append("text")
+             .attr("id", "pca"+vr)
+             .attr("opacity", "0")
+             .attr("transform", "translate(" + (P3.PCALegSize/2) + "," + (P3.PCALegSize/2) + ")")
+             .html(vr)
+         });
+
+    /* read the data */
+    d3.csv("state-data.csv", function(error, data) {
+        if (error) throw error;
+
+        /* augment each datum (row of csv file) with "xy" coordinates of hexagon center
+           and "pathdata" svg specification of hexagon perimeter */
+        data.forEach(function(d,ii) {
+          var S = P3.HexScaling; // hexagon scaling (1 = touching)
+          var hr = Number(d["HexRow"]);
+          var hc = Number(d["HexCol"]);
+          // (x,y) center of hexagon, given location in hex grid
+          d.xy = [HexWidth*(-2 + hc + 0.5*hr),
+                  1+HexWidth*(-0.3 + 0.5*Math.sqrt(3)*hr)];
+          // variables to simplify tracing hexagon corners
+          var dx = S*HexWidth/2;
+          var HY = S*HexWidth/Math.sqrt(3);
+          var dy = HY/2;
+          // traverse vertices of hexagon centered at 0,0
+          d.pathdata = ("M" + (-dx) + "," + dy +
+                "l" + dx + "," + dy +
+                "l" + dx + "," + (-dy) +
+                "l0," + (-HY) +
+                "l" + (-dx) + "," + (-dy) +
+                "l" + (-dx) + "," + (dy) + "Z");
+          d.ii = ii;
+        });
+
+        /* for each state, create a "g", which will contain both a "path", for
+           the hexagon, and a "text" to show the state abbreviation */
+        var stategs = d3.select("#mapUS").selectAll("g")
+            .data(data)
+          .enter().append("g")
+            .attr("id", function(d){ return d.State;})
+            .attr("transform", function(d) { return "translate(" + d.xy[0] + "," + d.xy[1] + ")"; })
+            .on("click", function(){ P3.toggleState(d3.select(this).attr("id")); })
+            ;
+        stategs.append("path")
+          .attr("id", function(d){ return d.State + "hex";})
+          .attr("class", "state")
+          .attr("d", function(d){ return d.pathdata;})
+          .style("fill", function(d){ return "#ddd" }) // initialize to gray
+          ;
+        stategs.append("text")
+          .attr("class", "stateID")
+          .text( function(d) { return d["State"]; });
+
+        /* maps interval [0,data.length-1] to [0,P3.CmapLegSize-1] */
+        var tscl = d3.scale.linear().domain([0,data.length-1]).range([0,P3.CmapLegSize-1]);
+
+        /* create marks that will indicate the data values over both the
+           univariate and bivariate colormap displays. Unlike in project2
+           these are now ellipses, which can be turned into either vertical
+           tickmarks, or circles, or smooth transitions in between */
+        d3.select("#cmlMarks").selectAll("ellipse")
+            .data(data)
+          .enter().append("ellipse")
+            .attr("id", function(d){ return d.State + "mark";})
+            .attr("state", function(d){ return d.State;})
+            .attr("rx", P3.MarkRadius).attr("ry", P3.MarkRadius)
+            .attr("cx", function(d) { return tscl(d.ii); })
+            .attr("cy", function(d) { return P3.CmapLegSize-1-tscl(d.ii); })
+            .attr("stroke", "black")
+            .attr("stroke-opacity", 0.6)
+            .attr("stroke-width", 2)
+            /* we want some fill, even if opacity is zero, so that clicking
+               inside the circle (in the bivariate case) selects the state */
+            .attr("fill", "white")
+            .attr("fill-opacity", 0)
+            .on("click", function(){ P3.toggleState(d3.select(this).attr("state")); })
+        ;
+
+        /* call student-provided data processor */
+        P3.dataFinish(data);
+
+    });
+    })();
+    </script>
+  </body>
+</html>
